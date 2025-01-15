@@ -8,6 +8,7 @@
 #include <QProcess>
 #include <QMessageBox>
 #include <QTextStream>
+#include <QDebug>
 
 class ModuleViewer : public QWidget {
 public:
@@ -41,90 +42,116 @@ public:
         // Очистить таблицу перед обновлением
         tableWidget->setRowCount(0);
 
-        // Запуск команды lsmod для получения списка модулей
-        QProcess process;
-        process.start("lsmod");
-        process.waitForFinished();
+        // Получение списка всех модулей
+        QStringList moduleFiles = getAllModules();
 
-        // Чтение вывода команды
-        QString output = process.readAllStandardOutput();
-        QStringList lines = output.split("\n");
+        if (moduleFiles.isEmpty()) {
+            QMessageBox::information(this, "Информация", "Модули не найдены или ошибка при их поиске.");
+            return;
+        }
 
-        // Пропускаем первую строку (заголовок) и добавляем в таблицу данные
-        for (int i = 1; i < lines.size(); ++i) {
-            QString line = lines.at(i).trimmed();
-            if (!line.isEmpty()) {
-                QStringList columns = line.split(QRegExp("\\s+"));
-                if (columns.size() > 1) {
-                    QString moduleName = columns.at(0);
-                    int row = tableWidget->rowCount();
-                    tableWidget->insertRow(row);
-                    tableWidget->setItem(row, 0, new QTableWidgetItem(moduleName));
-                    tableWidget->setItem(row, 1, new QTableWidgetItem(getModuleDescription(moduleName))); // Описание модуля
-                    tableWidget->setItem(row, 2, new QTableWidgetItem(getModuleOptions(moduleName))); // Опции модуля
-                    tableWidget->setItem(row, 3, new QTableWidgetItem(isModuleLoaded(moduleName) ? "Загружен" : "Не загружен"));
+        // Обрабатываем каждый найденный модуль
+        for (const QString& modulePath : moduleFiles) {
+            QString moduleName = modulePath.section('/', -1).section('.', 0, 0); // Получаем имя модуля
+            if (!moduleName.isEmpty()) {
+                int row = tableWidget->rowCount();
+                tableWidget->insertRow(row);
+                tableWidget->setItem(row, 0, new QTableWidgetItem(moduleName));
+                tableWidget->setItem(row, 1, new QTableWidgetItem(getModuleDescription(moduleName))); // Описание
+                tableWidget->setItem(row, 2, new QTableWidgetItem(getModuleOptions(moduleName))); // Опции
+                tableWidget->setItem(row, 3, new QTableWidgetItem(isModuleLoaded(moduleName) ? "Загружен" : "Не загружен"));
 
-                    // Кнопки для загрузки/выгрузки модулей
-                    QPushButton* loadButton = new QPushButton("Загрузить");
-                    connect(loadButton, &QPushButton::clicked, this, [this, moduleName] { loadModule(moduleName); });
+                // Кнопки для загрузки и выгрузки
+                QPushButton* loadButton = new QPushButton("Загрузить");
+                connect(loadButton, &QPushButton::clicked, this, [this, moduleName] { loadModule(moduleName); });
 
-                    QPushButton* unloadButton = new QPushButton("Выгрузить");
-                    connect(unloadButton, &QPushButton::clicked, this, [this, moduleName] { unloadModule(moduleName); });
+                QPushButton* unloadButton = new QPushButton("Выгрузить");
+                connect(unloadButton, &QPushButton::clicked, this, [this, moduleName] { unloadModule(moduleName); });
 
-                    tableWidget->setCellWidget(row, 4, loadButton);
-                    if (isModuleLoaded(moduleName)) {
-                        loadButton->setEnabled(false);
-                    } else {
-                        unloadButton->setEnabled(false);
-                    }
+                tableWidget->setCellWidget(row, 4, loadButton);
+
+                // Обновление состояний кнопок в зависимости от того, загружен ли модуль
+                if (isModuleLoaded(moduleName)) {
+                    loadButton->setEnabled(false); // Если модуль уже загружен, кнопка "Загрузить" отключена
+                    unloadButton->setEnabled(true); // Кнопка "Выгрузить" активна
+                } else {
+                    unloadButton->setEnabled(false); // Если модуль не загружен, кнопка "Выгрузить" отключена
+                    loadButton->setEnabled(true); // Кнопка "Загрузить" активна
                 }
+
+                // Кнопка для выгрузки
+                tableWidget->setCellWidget(row, 4, unloadButton);
             }
         }
+    }
+
+    QStringList getAllModules() {
+        // Получаем версию ядра
+        QProcess unameProcess;
+        unameProcess.start("uname", QStringList() << "-r");
+        unameProcess.waitForFinished();
+        QString kernelVersion = unameProcess.readAllStandardOutput().trimmed();
+
+        // Формируем правильный путь к модулям
+        QString modulePath = "/lib/modules/" + kernelVersion + "/kernel/";
+
+        // Запуск find для поиска файлов модулей
+        QProcess process;
+        process.start("find", QStringList() << modulePath << "-name" << "*.ko");
+        process.waitForFinished();
+
+        if (process.exitCode() != 0) {
+            qDebug() << "Ошибка при поиске модулей.";
+            return QStringList();
+        }
+
+        QString output = process.readAllStandardOutput();
+        QStringList moduleFiles = output.split("\n", QString::SkipEmptyParts);
+
+        // Для отладки
+        qDebug() << "Modules found: " << moduleFiles;
+
+        return moduleFiles;
     }
 
     QString getModuleDescription(const QString& moduleName) {
-        // Получение информации о модуле с помощью команды modinfo
-        QProcess process;
-        process.start("modinfo", QStringList() << moduleName);
-        process.waitForFinished();
-
-        QString output = process.readAllStandardOutput();
-        QStringList lines = output.split("\n");
-
-        // Поиск строки с описанием модуля
-        for (const QString& line : lines) {
-            if (line.startsWith("description")) {
-                return line.split(":").at(1).trimmed();
-            }
-        }
-        return "Описание не найдено";
+        return getModuleInfo(moduleName, "description");
     }
 
     QString getModuleOptions(const QString& moduleName) {
-        // Получение информации о модуле с помощью команды modinfo
+        return getModuleInfo(moduleName, "parm");
+    }
+
+    QString getModuleInfo(const QString& moduleName, const QString& field) {
         QProcess process;
         process.start("modinfo", QStringList() << moduleName);
         process.waitForFinished();
 
+        if (process.exitCode() != 0) {
+            qDebug() << "Ошибка при получении информации о модуле " << moduleName;
+            return "Информация не найдена";
+        }
+
         QString output = process.readAllStandardOutput();
         QStringList lines = output.split("\n");
 
-        // Поиск строк, содержащих опции
-        QString options;
         for (const QString& line : lines) {
-            if (line.startsWith("parm")) {
-                options += line.split(":").at(1).trimmed() + "; ";
+            if (line.startsWith(field)) {
+                return line.split(":").at(1).trimmed();
             }
         }
-
-        return options.isEmpty() ? "Нет опций" : options;
+        return "Информация не найдена";
     }
 
     bool isModuleLoaded(const QString& moduleName) {
-        // Проверка, загружен ли модуль
         QProcess process;
         process.start("lsmod");
         process.waitForFinished();
+
+        if (process.exitCode() != 0) {
+            qDebug() << "Ошибка при проверке состояния модулей.";
+            return false;
+        }
 
         QString output = process.readAllStandardOutput();
         QStringList lines = output.split("\n");
@@ -139,27 +166,27 @@ public:
 
     void loadModule(const QString& moduleName) {
         QProcess process;
-        process.start("modprobe", QStringList() << moduleName);
+        process.start("sudo", QStringList() << "modprobe" << moduleName);
         process.waitForFinished();
 
         if (process.exitCode() != 0) {
             QMessageBox::critical(this, "Ошибка", "Не удалось загрузить модуль " + moduleName);
         } else {
             QMessageBox::information(this, "Успех", "Модуль " + moduleName + " успешно загружен.");
-            updateModuleList();
+            QMetaObject::invokeMethod(this, "updateModuleList", Qt::QueuedConnection); // Обновление списка после загрузки
         }
     }
 
     void unloadModule(const QString& moduleName) {
         QProcess process;
-        process.start("modprobe", QStringList() << "-r" << moduleName);
+        process.start("sudo", QStringList() << "modprobe" << "-r" << moduleName);
         process.waitForFinished();
 
         if (process.exitCode() != 0) {
             QMessageBox::critical(this, "Ошибка", "Не удалось выгрузить модуль " + moduleName);
         } else {
             QMessageBox::information(this, "Успех", "Модуль " + moduleName + " успешно выгружен.");
-            updateModuleList();
+            QMetaObject::invokeMethod(this, "updateModuleList", Qt::QueuedConnection); // Обновление списка после выгрузки
         }
     }
 
@@ -176,3 +203,4 @@ int main(int argc, char *argv[]) {
 
     return app.exec();
 }
+
