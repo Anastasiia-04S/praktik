@@ -61,26 +61,25 @@ public:
                 tableWidget->setItem(row, 2, new QTableWidgetItem(getModuleOptions(moduleName))); // Опции
                 tableWidget->setItem(row, 3, new QTableWidgetItem(isModuleLoaded(moduleName) ? "Загружен" : "Не загружен"));
 
-                // Кнопки для загрузки и выгрузки
+                // Создание кнопок для загрузки и выгрузки
                 QPushButton* loadButton = new QPushButton("Загрузить");
-                connect(loadButton, &QPushButton::clicked, this, [this, moduleName] { loadModule(moduleName); });
-
                 QPushButton* unloadButton = new QPushButton("Выгрузить");
+
+                connect(loadButton, &QPushButton::clicked, this, [this, moduleName] { loadModule(moduleName); });
                 connect(unloadButton, &QPushButton::clicked, this, [this, moduleName] { unloadModule(moduleName); });
 
+                // Установить кнопки в таблицу
                 tableWidget->setCellWidget(row, 4, loadButton);
+                tableWidget->setCellWidget(row, 5, unloadButton);
 
                 // Обновление состояний кнопок в зависимости от того, загружен ли модуль
                 if (isModuleLoaded(moduleName)) {
                     loadButton->setEnabled(false); // Если модуль уже загружен, кнопка "Загрузить" отключена
                     unloadButton->setEnabled(true); // Кнопка "Выгрузить" активна
                 } else {
-                    unloadButton->setEnabled(false); // Если модуль не загружен, кнопка "Выгрузить" отключена
                     loadButton->setEnabled(true); // Кнопка "Загрузить" активна
+                    unloadButton->setEnabled(false); // Если модуль не загружен, кнопка "Выгрузить" отключена
                 }
-
-                // Кнопка для выгрузки
-                tableWidget->setCellWidget(row, 4, unloadButton);
             }
         }
     }
@@ -166,7 +165,7 @@ public:
 
     void loadModule(const QString& moduleName) {
         QProcess process;
-        process.start("sudo", QStringList() << "modprobe" << moduleName);
+        process.start("beesu", QStringList() << "modprobe" << moduleName);  // Изменено с "sudo"
         process.waitForFinished();
 
         if (process.exitCode() != 0) {
@@ -177,9 +176,10 @@ public:
         }
     }
 
+
     void unloadModule(const QString& moduleName) {
         QProcess process;
-        process.start("sudo", QStringList() << "modprobe" << "-r" << moduleName);
+        process.start("beesu", QStringList() << "modprobe" << "-r" << moduleName);  // Изменено с "sudo"
         process.waitForFinished();
 
         if (process.exitCode() != 0) {
@@ -189,6 +189,7 @@ public:
             QMetaObject::invokeMethod(this, "updateModuleList", Qt::QueuedConnection); // Обновление списка после выгрузки
         }
     }
+
 
 private:
     QTableWidget* tableWidget;
@@ -203,4 +204,3 @@ int main(int argc, char *argv[]) {
 
     return app.exec();
 }
-
