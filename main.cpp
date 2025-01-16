@@ -15,8 +15,8 @@ public:
     ModuleViewer() {
         // Создание таблицы для отображения модулей
         tableWidget = new QTableWidget();
-        tableWidget->setColumnCount(5); // Модуль, Описание, Опции, Состояние, Действия
-        tableWidget->setHorizontalHeaderLabels({"Модуль", "Описание", "Опции", "Состояние", "Действия"});
+        tableWidget->setColumnCount(6); // Модуль, Описание, Опции, Состояние, Действия(2 кнопки)
+        tableWidget->setHorizontalHeaderLabels({"Модуль", "Описание", "Опции", "Состояние", "Загрузить", "Выгрузить"});
 
         // Настройка стилей
         tableWidget->setStyleSheet("QTableWidget { font-size: 14px; }"
@@ -68,7 +68,7 @@ public:
                 connect(loadButton, &QPushButton::clicked, this, [this, moduleName] { loadModule(moduleName); });
                 connect(unloadButton, &QPushButton::clicked, this, [this, moduleName] { unloadModule(moduleName); });
 
-                // Установить кнопки в таблицу
+                // Установить кнопки в таблицу в соответствующие ячейки
                 tableWidget->setCellWidget(row, 4, loadButton);
                 tableWidget->setCellWidget(row, 5, unloadButton);
 
@@ -176,7 +176,6 @@ public:
         }
     }
 
-
     void unloadModule(const QString& moduleName) {
         QProcess process;
         process.start("beesu", QStringList() << "modprobe" << "-r" << moduleName);  // Изменено с "sudo"
@@ -189,7 +188,6 @@ public:
             QMetaObject::invokeMethod(this, "updateModuleList", Qt::QueuedConnection); // Обновление списка после выгрузки
         }
     }
-
 
 private:
     QTableWidget* tableWidget;
